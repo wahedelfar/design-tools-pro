@@ -6,11 +6,22 @@ import { analyzeProductForCampaign, generateImage, editImage } from '../services
 import ImageWorkspace from './ImageWorkspace';
 import BrandingResultsGrid from './BrandingResultsGrid';
 
-// Scenarios updated for diversity and lifestyle elements, reduced to 3 as requested
 const CAMPAIGN_SCENARIOS = [
-    'Professional Hero Front View (Studio)', 
-    'Lifestyle: A person using the product naturally (Human connection)', 
-    'Aesthetic Flat Lay Shot (Environment)'
+    {
+        id: 'hero',
+        label: 'PROFESSIONAL HERO FRONT VIEW (STUDIO)',
+        prompt: 'professional studio hero shot of {product}, close-up melted chocolate dripping, wooden board, 4K, studio lighting, no human, {aesthetics}'
+    },
+    {
+        id: 'human',
+        label: 'THE PRODUCT NATURALLY (HUMAN CONNECTION)',
+        prompt: 'lifestyle shot of a person enjoying {product} in a cozy cafe, hand holding spoon, warm candid moment, {aesthetics}'
+    },
+    {
+        id: 'flatlay',
+        label: 'AESTHETIC FLAT LAY (IN CAFE MOMENT)',
+        prompt: 'aesthetic flat lay top-down view of {product} with coffee cup and cafe props on wooden table, {aesthetics}'
+    }
 ];
 
 const CAMPAIGN_MOODS = [
@@ -100,35 +111,48 @@ const CampaignStudio: React.FC<{
         try {
             let analysis = project.productAnalysis || await analyzeProductForCampaign(productImages);
             
-            const scenarios = mode === 'auto' 
-                ? CAMPAIGN_SCENARIOS 
-                : project.customIdeas.filter(idea => idea.trim().length > 0);
+            const scenarios = mode === 'auto'
+                ? CAMPAIGN_SCENARIOS
+                : project.customIdeas
+                    .filter(idea => idea.trim().length > 0)
+                    .map((idea, index) => ({
+                        id: `custom-${index}`,
+                        label: idea,
+                        prompt: idea
+                    }));
 
-            const initial = scenarios.map(scenario => ({ 
-                scenario, 
-                image: null, 
-                isLoading: true, 
-                error: null, 
-                editPrompt: '', 
-                isEditing: false 
+            const initial = scenarios.map(scenario => ({
+                scenario: scenario.label,
+                image: null,
+                isLoading: true,
+                error: null,
+                editPrompt: '',
+                isEditing: false
             }));
 
             setProject(s => ({ ...s, results: initial as any }));
 
             const promises = scenarios.map((scenario) => {
-                const moodV = mode === 'auto' ? (CAMPAIGN_MOODS.find(m => m.label === project.selectedMood)?.value || '') : '';
-                const backgroundInfo = project.customPrompt ? ` Style details: ${project.customPrompt}.` : '';
-                
-                // Refined constraints to protect existing product text while preventing AI-hallucinated extra text
-                const textConstraint = "STRICTLY PRESERVE all original text, labels, and branding on the product. DO NOT erase or modify existing writing. NO EXTRA generated text in the scene environment.";
+                const moodV = mode === 'auto'
+                    ? (CAMPAIGN_MOODS.find(m => m.label === project.selectedMood)?.value || '')
+                    : '';
+                const aesthetics = [moodV, project.customPrompt].filter(Boolean).join('. ');
+                const product = analysis;
 
+                // Keep the uploaded PRODUCT REF attached to every generation request,
+                // while also making the product description explicit inside every scenario prompt.
+                const scenarioPrompt = scenario.prompt
+                    .replaceAll('{product}', product)
+                    .replaceAll('{aesthetics}', aesthetics);
+
+                const textConstraint = "STRICTLY PRESERVE all original text, labels, and branding on the product. DO NOT erase or modify existing writing. NO EXTRA generated text in the scene environment.";
                 const prompt = mode === 'auto'
-                    ? `Professional Commercial Photography: ${analysis}. Scenario: ${scenario}. Style: ${moodV}.${backgroundInfo} PHOTOREALISTIC, HIGH-RESOLUTION, CLEAN IMAGE. ${textConstraint}`
-                    : `Professional Product Idea Shoot: ${analysis}. Idea: ${scenario}.${backgroundInfo} PHOTOREALISTIC, STRICT IDENTITY PRESERVATION. ${textConstraint}`;
-                
+                    ? `${scenarioPrompt}. PHOTOREALISTIC, HIGH-RESOLUTION, CLEAN IMAGE. ${textConstraint}`
+                    : `Professional Product Idea Shoot: ${product}. Idea: ${scenarioPrompt}. PHOTOREALISTIC, STRICT IDENTITY PRESERVATION. ${textConstraint}`;
+
                 return generateImage(productImages, prompt, null)
-                    .then(image => ({ scenario, image }))
-                    .catch(error => ({ scenario, error: error.message }));
+                    .then(image => ({ scenario: scenario.label, image }))
+                    .catch(error => ({ scenario: scenario.label, error: error.message }));
             });
 
             const completed = await Promise.all(promises);
