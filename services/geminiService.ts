@@ -38,10 +38,13 @@ export async function translateText(text: string, targetLanguage: string): Promi
 }
 
 export async function generateImage(productImages: ImageFile[], prompt: string, styleImages: ImageFile[] | null): Promise<ImageFile> {
+    // The server also enforces the master directive, but keeping the client
+    // brief explicit makes every studio follow the same generation contract.
+    const finalPrompt = IMAGE_GENERATION_MASTER_PROMPT + prompt.trim();
     const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productImages, styleImages, prompt }),
+        body: JSON.stringify({ productImages, styleImages, prompt: finalPrompt }),
     });
 
     let payload: any = null;
@@ -61,6 +64,41 @@ export async function generateImage(productImages: ImageFile[], prompt: string, 
         name: payload.name || `gen-${Date.now()}.png`,
     };
 }
+
+const IMAGE_GENERATION_MASTER_PROMPT = `MASTER IMAGE GENERATION DIRECTIVE
+
+Create the requested image as a professional production asset. Follow the user's creative brief precisely while treating uploaded reference images as authoritative visual sources.
+
+REFERENCE PRIORITY:
+- Product, packaging, logo, person, garment, food, architecture, or other explicitly referenced subject: preserve its recognizable identity, proportions, colors, materials, markings and distinctive details.
+- Style/reference images: use them as visual guidance for lighting, palette, composition language, materials and atmosphere; do not copy unrelated subjects or objects from them.
+- If multiple references are provided, combine them only according to the user's request. Do not invent a conflicting subject.
+
+CREATIVE EXECUTION:
+- Follow the requested subject, action, composition, camera angle, lens perspective, environment, lighting, color grade, mood, aspect ratio and visual style.
+- Make the result look intentional, premium, coherent and production-ready.
+- Prefer physically plausible materials, realistic light transport, natural shadows, accurate reflections and convincing depth.
+- For photorealistic requests, produce authentic photographic detail rather than illustration-like or synthetic-looking surfaces.
+
+FIDELITY RULES:
+- Do not redesign the referenced product, person, logo, packaging, food or brand identity.
+- Do not alter important reference details unless the prompt explicitly requests the change.
+- Preserve readable brand marks and requested typography as accurately as the model permits.
+- Do not add random people, products, props, accessories, text, logos, watermarks or decorative elements that were not requested.
+- Do not duplicate subjects or create accidental extra limbs, fingers, eyes, objects or products.
+- Avoid plastic skin, excessive smoothing, artificial HDR, muddy textures, warped geometry and obvious generative artifacts.
+
+COMPOSITION DISCIPLINE:
+- Respect the requested framing and hierarchy.
+- Keep the primary subject clearly dominant.
+- Use negative space only when useful to the requested design.
+- Ensure foreground, midground and background support the brief rather than competing with it.
+
+FINAL QUALITY BAR:
+The result must look like a deliberate professional photograph, advertisement, campaign asset, product render, brand mockup or editorial image—whichever the user requested—not like an arbitrary AI reinterpretation.
+
+USER CREATIVE BRIEF:
+`;
 
 const IMAGE_EDIT_MASTER_PROMPT = `MASTER IMAGE EDITING DIRECTIVE
 
@@ -103,8 +141,30 @@ export async function editImage(image: ImageFile, prompt: string): Promise<Image
     return generateImage([image], finalPrompt, null);
 }
 
+const PROMPT_ENGINE_MASTER = `You are a senior commercial image prompt director.
+
+Transform the user's idea into a production-ready image-generation prompt.
+
+PROMPT CONTRACT:
+- Preserve the user's core subject, product identity and intent.
+- Add concrete visual direction: subject, composition, camera/lens perspective, lighting, environment, materials, color palette, mood, depth, texture and finishing.
+- Prefer specific visual language over vague adjectives.
+- Resolve ambiguity with restrained, commercially plausible choices.
+- Keep brand/product identity stable when a reference image is involved.
+- Do not invent brand names, slogans, claims, people or product features that the user did not request.
+- Write one coherent prompt optimized for an image model.
+- Output ONLY the final English image prompt; no analysis, headings or commentary.
+`;
+
 export async function generatePromptFromText(instructions: string): Promise<string> {
-    const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Expand this idea into a detailed, professional AI image generation prompt: "${instructions}"`, config: { safetySettings } });
+    const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `${PROMPT_ENGINE_MASTER}
+
+USER IDEA:
+${instructions.trim()}`,
+        config: { safetySettings }
+    });
     return response.text || '';
 }
 
@@ -135,6 +195,8 @@ export async function generateCampaignPlan(productImages: ImageFile[], userPromp
 }
 
 export async function expandImage(image: ImageFile, prompt: string): Promise<ImageFile> {
-    // Use the same provider routing and fallback behavior as other image operations.
-    return generateImage([image], `Expand image: ${prompt}`, null);
+    // Expansion is an image edit, so use the preservation-first edit contract
+    // rather than the general generation contract.
+    const finalPrompt = IMAGE_EDIT_MASTER_PROMPT + `Expand the canvas naturally: ${prompt.trim()}`;
+    return generateImage([image], finalPrompt, null);
 }
