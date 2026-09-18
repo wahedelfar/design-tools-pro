@@ -63,9 +63,9 @@ export async function generateImage(productImages: ImageFile[], prompt: string, 
 }
 
 export async function editImage(image: ImageFile, prompt: string): Promise<ImageFile> {
-    const response = await ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: { parts: [{ inlineData: { data: image.base64, mimeType: image.mimeType } }, { text: prompt }] }, config: { safetySettings } });
-    for (const part of response.candidates?.[0]?.content?.parts || []) if (part.inlineData) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType, name: `edit-${Date.now()}.png` };
-    throw new Error("Edit failed");
+    // Route image editing through the shared server endpoint so Gemini quota
+    // errors can fall back to the configured image-generation providers.
+    return generateImage([image], prompt, null);
 }
 
 export async function generatePromptFromText(instructions: string): Promise<string> {
@@ -100,7 +100,6 @@ export async function generateCampaignPlan(productImages: ImageFile[], userPromp
 }
 
 export async function expandImage(image: ImageFile, prompt: string): Promise<ImageFile> {
-    const response = await ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: { parts: [{ inlineData: { data: image.base64, mimeType: image.mimeType } }, { text: `Expand image: ${prompt}` }] }, config: { safetySettings } });
-    for (const part of response.candidates?.[0]?.content?.parts || []) if (part.inlineData) return { base64: part.inlineData.data, mimeType: part.inlineData.mimeType, name: `exp-${Date.now()}.png` };
-    throw new Error("Expansion failed");
+    // Use the same provider routing and fallback behavior as other image operations.
+    return generateImage([image], `Expand image: ${prompt}`, null);
 }
