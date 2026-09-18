@@ -10,6 +10,39 @@ const safetySettings = [
 
 const CLOUDFLARE_MODEL = '@cf/black-forest-labs/flux-2-klein-9b';
 
+const GENERATION_MASTER_PROMPT = `MASTER IMAGE GENERATION DIRECTIVE
+
+Create the requested image as a professional production asset. Uploaded references are authoritative visual sources.
+
+REFERENCE PRIORITY:
+- Preserve the identity, proportions, colors, materials, markings and distinctive details of any explicitly referenced product, person, logo, packaging, food or other subject.
+- Use style references for lighting, palette, atmosphere, composition language and materials without importing unrelated subjects or objects.
+- When multiple references are supplied, combine them only as requested.
+
+EXECUTION:
+- Follow the requested subject, action, composition, camera perspective, environment, lighting, color grade, mood, aspect ratio and style precisely.
+- Favor physically plausible materials, natural shadows, accurate reflections, convincing depth and coherent perspective.
+- For photorealistic requests, use authentic photographic detail and natural texture.
+
+FIDELITY:
+- Do not redesign referenced products, people, logos, packaging or brand identity unless explicitly requested.
+- Preserve important reference details.
+- Do not invent random people, objects, props, accessories, text, logos or watermarks.
+- Avoid duplicated subjects, malformed anatomy, warped geometry, plastic skin, excessive smoothing, artificial HDR and obvious generative artifacts.
+
+COMPOSITION:
+- Respect requested framing and visual hierarchy.
+- Keep the primary subject dominant and make background elements support the brief.
+- Preserve requested negative space and placement when specified.
+
+QUALITY BAR:
+Deliver a coherent, premium, production-ready result that looks intentionally art-directed rather than randomly reinterpreted.
+
+USER CREATIVE BRIEF:
+`;
+
+
+
 async function base64ToBlob(base64: string, mimeType = 'image/png'): Promise<Blob> {
   const clean = base64.includes(',') ? base64.split(',').pop()! : base64;
   const binary = Buffer.from(clean, 'base64');
@@ -155,6 +188,13 @@ export default async function handler(req: any, res: any) {
     return res.status(400).json({ error: 'Prompt is required' });
   }
 
+  // Server-side enforcement guarantees that every studio and every provider
+  // receives the same generation contract, even if a future UI bypasses the
+  // client helper.
+  const finalPrompt = prompt.startsWith('MASTER IMAGE GENERATION DIRECTIVE')
+    ? prompt
+    : GENERATION_MASTER_PROMPT + prompt.trim();
+
   const images = [
     ...(Array.isArray(productImages) ? productImages : []),
     ...(Array.isArray(styleImages) ? styleImages : []),
@@ -172,7 +212,7 @@ export default async function handler(req: any, res: any) {
       const parts: any[] = images.slice(0, 3).map((img: any) => ({
         inlineData: { data: img.base64, mimeType: img.mimeType },
       }));
-      parts.push({ text: prompt });
+      parts.push({ text: finalPrompt });
 
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
@@ -218,12 +258,12 @@ export default async function handler(req: any, res: any) {
       // Gemini image generation is unavailable on its current Free Tier.
       // Try Qwen Image first, then Cloudflare FLUX.
       try {
-        const generated = await generateWithQwen(images, prompt);
+        const generated = await generateWithQwen(images, finalPrompt);
         return res.status(200).json(generated);
       } catch (qwenError: any) {
         console.error('Qwen image generation fallback error:', qwenError);
         try {
-          const generated = await generateWithCloudflare(images, prompt);
+          const generated = await generateWithCloudflare(images, finalPrompt);
           return res.status(200).json(generated);
         } catch (fallbackError: any) {
           console.error('Cloudflare FLUX fallback error:', fallbackError);
