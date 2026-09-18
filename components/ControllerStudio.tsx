@@ -128,33 +128,61 @@ const ControllerStudio: React.FC<ControllerStudioProps> = ({ project, setProject
 
     const buildPromptFromSliders = (sliders: ControllerSlider[]): string => {
         const changes: string[] = [];
-        
+
         sliders.forEach(s => {
             if (s.value === 0) return;
-            
             const magnitude = Math.abs(s.value);
-            const intensity = magnitude < 0.3 ? 'slightly' : magnitude < 0.7 ? 'moderately' : 'strongly';
-            
+            const intensity = magnitude < 0.3 ? 'subtle' : magnitude < 0.7 ? 'moderate' : 'strong';
+
             if (s.id === 'smile') {
-                if (s.value > 0) changes.push(`${intensity} smiling`);
-                else changes.push(`${intensity} less smiling`);
+                changes.push(s.value > 0
+                    ? `Increase the smile to a ${intensity}, natural smile with believable cheek and mouth movement.`
+                    : `Reduce the smile to a ${intensity}, natural neutral expression.`);
             } else if (s.id === 'age') {
-                if (s.value > 0) changes.push(`make the subject look ${intensity} older`);
-                else changes.push(`make the subject look ${intensity} younger`);
+                changes.push(s.value > 0
+                    ? `Make the subject appear ${intensity} older while preserving the same recognizable identity and facial structure.`
+                    : `Make the subject appear ${intensity} younger while preserving the same recognizable identity and facial structure.`);
             } else if (s.id === 'head_yaw') {
-                 if (s.value > 0) changes.push(`turn head ${intensity} to the right`);
-                 else changes.push(`turn head ${intensity} to the left`);
+                changes.push(s.value > 0
+                    ? `Rotate the head ${intensity} toward camera-right while keeping the same face, neck anatomy, and body position.`
+                    : `Rotate the head ${intensity} toward camera-left while keeping the same face, neck anatomy, and body position.`);
             } else if (s.id === 'head_pitch') {
-                 if (s.value > 0) changes.push(`tilt head ${intensity} up`);
-                 else changes.push(`tilt head ${intensity} down`);
-            }
-             else {
-                changes.push(`${intensity} increase ${s.label.toLowerCase()}`);
+                changes.push(s.value > 0
+                    ? `Tilt the head ${intensity} upward while keeping the facial proportions and camera perspective consistent.`
+                    : `Tilt the head ${intensity} downward while keeping the facial proportions and camera perspective consistent.`);
+            } else if (s.id === 'eye_direction') {
+                changes.push(s.value > 0
+                    ? `Move the gaze subtly toward camera-right while preserving the exact eyes and facial identity.`
+                    : `Move the gaze subtly toward camera-left while preserving the exact eyes and facial identity.`);
+            } else {
+                changes.push(`Apply a ${intensity} increase to ${s.label.toLowerCase()} only, without changing unrelated facial or body features.`);
             }
         });
 
-        if (changes.length === 0) return "High resolution photo of the subject.";
-        return "Edit the image to apply these changes: " + changes.join(", ") + ". Keep the identity and background consistent.";
+        if (changes.length === 0) return 'No creative change requested. Preserve the source image exactly.';
+
+        return `CONTROLLED REFERENCE EDIT — apply only the requested slider changes.
+
+REQUESTED CHANGES:
+${changes.map(change => `- ${change}`).join('\n')}
+
+The uploaded image is the PRIMARY SOURCE and IDENTITY ANCHOR.
+
+LOCKED / MUST PRESERVE:
+- Exact person identity and recognizable facial structure.
+- Face shape, eyes, eyebrows, nose, lips, jawline, ears, skin tone, natural skin texture, age appearance and distinctive asymmetry.
+- Hair, facial hair, body proportions, clothing, hands and accessories.
+- Original background, composition, framing, camera angle, perspective, lighting direction, color balance and depth of field.
+- Do not redesign, beautify, de-age, age-shift, replace, merge or reinterpret the person unless that exact attribute is explicitly requested above.
+
+EDITING RULES:
+- Change ONLY the requested attributes.
+- Treat every unmentioned visual attribute as immutable.
+- Preserve realistic anatomy and natural transitions between edited and unedited areas.
+- Match the original lighting, shadows, perspective, sharpness and photographic grain.
+- Avoid plastic skin, face morphing, identity drift, warped eyes, duplicated features, malformed teeth, ears or hands.
+- Do not add people, objects, text, logos or accessories.
+- Return a single photorealistic continuation of the original photograph, not a newly invented scene.`;
     };
 
     const handleGenerate = async () => {
