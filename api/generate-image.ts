@@ -17,6 +17,74 @@ async function base64ToBlob(base64: string, mimeType = 'image/png'): Promise<Blo
   return new Blob([resized], { type: 'image/png' });
 }
 
+async function generateWithQwen(images: any[], prompt: string) {
+  const apiKey = process.env.QWEN_API_KEY;
+  const workspaceId = process.env.QWEN_WORKSPACE_ID;
+
+  if (!apiKey || !workspaceId) {
+    throw new Error(
+      'Qwen Image is not configured. Add QWEN_API_KEY and QWEN_WORKSPACE_ID to Vercel Production environment variables.'
+    );
+  }
+
+  const endpoint =
+    `https://${workspaceId}.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/images/generations`;
+
+  const body: any = {
+    model: 'qwen-image-2.0',
+    prompt,
+    watermark: false,
+    prompt_extend: true,
+    enable_thinking: false,
+  };
+
+  if (images.length > 0) {
+    body.image = images.slice(0, 3).map((image: any) => {
+      const mime = image?.mimeType || 'image/png';
+      const base64 = String(image?.base64 || '').replace(/^data:[^;]+;base64,/, '');
+      return `data:${mime};base64,${base64}`;
+    });
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  const payload: any = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      payload?.error?.message ||
+      payload?.message ||
+      `Qwen image generation failed (${response.status})`;
+    const error: any = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  const imageUrl = payload?.data?.[0]?.url;
+  if (!imageUrl || typeof imageUrl !== 'string') {
+    throw new Error('Qwen returned no image URL');
+  }
+
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) {
+    throw new Error(`Failed to download Qwen image (${imageResponse.status})`);
+  }
+
+  const buffer = Buffer.from(await imageResponse.arrayBuffer());
+  return {
+    base64: buffer.toString('base64'),
+    mimeType: imageResponse.headers.get('content-type') || 'image/png',
+    name: `gen-qwen-${Date.now()}.png`,
+  };
+}
+
 async function generateWithCloudflare(images: any[], prompt: string) {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const token = process.env.CLOUDFLARE_API_TOKEN;
@@ -147,21 +215,27 @@ export default async function handler(req: any, res: any) {
         });
       }
 
-      // Gemini image Free Tier is unavailable for this model. Fall through
-      // automatically to Cloudflare FLUX.2 klein when configured.
+      // Gemini image generation is unavailable on its current Free Tier.
+      // Try Qwen Image first, then Cloudflare FLUX.
       try {
-        const generated = await generateWithCloudflare(images, prompt);
+        const generated = await generateWithQwen(images, prompt);
         return res.status(200).json(generated);
-      } catch (fallbackError: any) {
-        console.error('Cloudflare FLUX fallback error:', fallbackError);
-        return res.status(429).json({
-          error: 'Gemini quota exceeded and Cloudflare FLUX fallback is unavailable.',
-          geminiError: error?.message || 'Gemini quota exceeded',
-          fallbackError: fallbackError?.message || 'Cloudflare fallback failed',
-          status: 429,
-        });
-      }
-    }
+      } catch (qwenError: any) {
+        console.error('Qwen image generation fallback error:', qwenError);
+        try {
+          const generated = await generateWithCloudflare(images, prompt);
+          return res.status(200).json(generated);
+        } catch (fallbackError: any) {
+          console.error('Cloudflare FLUX fallback error:', fallbackError);
+          return res.status(429).json({
+            error: 'All image generation providers failed.',
+            geminiError: error?.message || 'Gemini quota exceeded',
+            qwenError: qwenError?.message || 'Qwen fallback failed',
+            fallbackError: fallbackError?.message || 'Cloudflare fallback failed',
+            status: 429,
+          });
+        }
+      }    }
   }
 
   // If Gemini is not configured, Cloudflare can operate as the standalone engine.
