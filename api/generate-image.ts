@@ -191,9 +191,11 @@ export default async function handler(req: any, res: any) {
   // Server-side enforcement guarantees that every studio and every provider
   // receives the same generation contract, even if a future UI bypasses the
   // client helper.
-  const finalPrompt = prompt.startsWith('MASTER IMAGE GENERATION DIRECTIVE')
-    ? prompt
-    : GENERATION_MASTER_PROMPT + prompt.trim();
+  const finalPrompt =
+    prompt.startsWith('MASTER IMAGE GENERATION DIRECTIVE') ||
+    prompt.startsWith('MASTER IMAGE EDITING DIRECTIVE')
+      ? prompt
+      : GENERATION_MASTER_PROMPT + prompt.trim();
 
   const images = [
     ...(Array.isArray(productImages) ? productImages : []),
