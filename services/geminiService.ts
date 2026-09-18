@@ -62,10 +62,45 @@ export async function generateImage(productImages: ImageFile[], prompt: string, 
     };
 }
 
+const IMAGE_EDIT_MASTER_PROMPT = `MASTER IMAGE EDITING DIRECTIVE
+
+Use the uploaded image as the PRIMARY SOURCE. This is a controlled image edit, not a recreation from scratch.
+
+PRIORITY ORDER:
+1. Preserve the exact source identity and visual information.
+2. Apply only the requested edit.
+3. Preserve photorealism and anatomical consistency.
+4. Do not introduce creative changes that were not requested.
+
+IDENTITY LOCK:
+- Preserve the same person, face shape, facial proportions, eyes, eyebrows, nose, lips, jawline, ears, skin tone, natural skin texture, age appearance, hair, facial hair and distinctive features.
+- Preserve natural asymmetry and recognizable details.
+- Never replace, redesign, beautify, merge, or reinterpret the identity unless explicitly requested.
+
+SOURCE LOCK:
+- Preserve original pose, body proportions, clothing, accessories, hands, background, composition, framing, camera angle, perspective, lighting direction, color balance, depth of field and photographic texture.
+- Treat every unmentioned attribute as IMMUTABLE.
+
+CONTROLLED EDIT:
+- Change ONLY what the user explicitly requests.
+- Keep the requested change localized and visually plausible.
+- Match existing light, shadow, perspective, focus, grain and color response.
+- Make transitions natural; do not create visible seams or pasted-looking edits.
+
+QUALITY GUARDRAILS:
+- No identity drift.
+- No facial warping or feature duplication.
+- No plastic skin or excessive beauty retouching.
+- No malformed eyes, teeth, ears, hands or fingers.
+- No new people, objects, accessories, text or logos unless explicitly requested.
+- Do not change the camera or composition unless explicitly requested.
+
+USER REQUEST:
+`;
+
 export async function editImage(image: ImageFile, prompt: string): Promise<ImageFile> {
-    // Route image editing through the shared server endpoint so Gemini quota
-    // errors can fall back to the configured image-generation providers.
-    return generateImage([image], prompt, null);
+    const finalPrompt = IMAGE_EDIT_MASTER_PROMPT + prompt.trim();
+    return generateImage([image], finalPrompt, null);
 }
 
 export async function generatePromptFromText(instructions: string): Promise<string> {
