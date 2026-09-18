@@ -1,4 +1,5 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from '@google/genai';
+import sharp from 'sharp';
 
 const safetySettings = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
@@ -9,10 +10,11 @@ const safetySettings = [
 
 const CLOUDFLARE_MODEL = '@cf/black-forest-labs/flux-2-klein-9b';
 
-function base64ToBlob(base64: string, mimeType = 'image/png'): Blob {
+async function base64ToBlob(base64: string, mimeType = 'image/png'): Promise<Blob> {
   const clean = base64.includes(',') ? base64.split(',').pop()! : base64;
   const binary = Buffer.from(clean, 'base64');
-  return new Blob([binary], { type: mimeType });
+  const resized = await sharp(binary).resize({ width: 511, height: 511, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+  return new Blob([resized], { type: 'image/png' });
 }
 
 async function generateWithCloudflare(images: any[], prompt: string) {
@@ -38,13 +40,13 @@ async function generateWithCloudflare(images: any[], prompt: string) {
     if (!image?.base64) continue;
     form.append(
       `input_image_${i}`,
-      base64ToBlob(image.base64, image.mimeType || 'image/png'),
+      await base64ToBlob(image.base64, image.mimeType || 'image/png'),
       image.name || `reference-${i}.png`
     );
   }
 
   const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${encodeURIComponent(CLOUDFLARE_MODEL)}`,
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${CLOUDFLARE_MODEL}`,
     {
       method: 'POST',
       headers: {
